@@ -120,6 +120,13 @@ export default function MapComponent() {
     map.addInteraction(selectInteraction);
     map.addInteraction(snapInteraction);
 
+    // Log selected features
+    // const geojsonFormatter = new GeoJSON();
+    selectInteraction.on("select", (evt): void => {
+      const data = evt.selected[0]?.getGeometry();
+      console.log(data);
+    });
+
     // Save to refs for external control
     modifyInteractionRef.current = modifyInteraction;
     drawInteractionRef.current = drawInteraction;
