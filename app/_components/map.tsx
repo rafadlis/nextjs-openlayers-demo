@@ -13,6 +13,7 @@ import "ol/ol.css";
 import { Minus, MousePointer, Pencil, Plus, Settings2 } from "lucide-react";
 import type { DrawEvent } from "ol/interaction/Draw";
 import { getArea } from "ol/sphere";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import {
@@ -42,6 +43,7 @@ export default function MapComponent() {
       }
     | undefined
   >(undefined);
+  const [crs, setCrs] = useState<string | undefined>(undefined);
 
   const applyMode = useEffectEvent((nextMode: EditorMode): void => {
     const draw = drawInteractionRef.current;
@@ -178,6 +180,8 @@ export default function MapComponent() {
 
     window.addEventListener("keydown", onKeyDown);
 
+    setCrs(map.getView().getProjection().getCode());
+
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       map.setTarget(undefined);
@@ -270,6 +274,9 @@ export default function MapComponent() {
             <Settings2 className="h-4 w-4" />
           </Button>
         </ButtonGroup>
+      </div>
+      <div className="absolute top-4 left-4">
+        <Badge>{crs}</Badge>
       </div>
     </div>
   );
