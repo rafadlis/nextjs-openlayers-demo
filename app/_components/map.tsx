@@ -1,6 +1,6 @@
 "use client";
 
-import { Draw, Modify, Snap } from "ol/interaction";
+import { Draw, Modify, Select, Snap } from "ol/interaction";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
 import OlMap from "ol/Map";
@@ -8,7 +8,7 @@ import { fromLonLat } from "ol/proj";
 import OSM from "ol/source/OSM";
 import VectorSource from "ol/source/Vector";
 import View from "ol/View";
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import "ol/ol.css";
 import { Minus, MousePointer, Pencil, Plus, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,56 @@ import { ButtonGroup } from "@/components/ui/button-group";
 export default function MapComponent() {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<OlMap | null>(null);
+  const drawInteractionRef = useRef<Draw | null>(null);
+  const modifyInteractionRef = useRef<Modify | null>(null);
+  const selectInteractionRef = useRef<Select | null>(null);
+  const snapInteractionRef = useRef<Snap | null>(null);
+
+  type EditorMode = "edit" | "select" | "modify";
+  const [mode, setMode] = useState<EditorMode>("edit");
+
+  const applyMode = useEffectEvent((nextMode: EditorMode): void => {
+    const draw = drawInteractionRef.current;
+    const modify = modifyInteractionRef.current;
+    const select = selectInteractionRef.current;
+    const snap = snapInteractionRef.current;
+
+    if (draw) {
+      // Abort any in-progress sketch when leaving edit (draw) mode
+      if (nextMode !== "edit") {
+        try {
+          draw.abortDrawing();
+        } catch {
+          // no-op if not drawing
+        }
+      }
+      draw.setActive(nextMode === "edit");
+    }
+    if (modify) {
+      modify.setActive(nextMode === "modify");
+    }
+    if (select) {
+      select.setActive(nextMode === "select");
+    }
+    if (snap) {
+      // Snap is useful for drawing and modifying; disable for pure selection
+      snap.setActive(nextMode !== "select");
+    }
+  });
+  const onKeyDown = useEffectEvent((event: KeyboardEvent): void => {
+    if (event.key === "Escape" || event.key === "Esc") {
+      try {
+        drawInteractionRef.current?.abortDrawing();
+      } catch {
+        // ignore if not drawing
+      }
+      return;
+    }
+    if (event.key.toLowerCase() === "z" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      drawInteractionRef.current?.removeLastPoint();
+    }
+  });
 
   const handleZoomIn = (): void => {
     const map = mapInstanceRef.current;
@@ -62,31 +112,43 @@ export default function MapComponent() {
     mapInstanceRef.current = map;
     const modifyInteraction = new Modify({ source: drawSource });
     const drawInteraction = new Draw({ type: "Polygon", source: drawSource });
+    const selectInteraction = new Select();
     const snapInteraction = new Snap({ source: drawSource });
 
     map.addInteraction(modifyInteraction);
     map.addInteraction(drawInteraction);
+    map.addInteraction(selectInteraction);
     map.addInteraction(snapInteraction);
 
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape" || event.key === "Esc") {
-        drawInteraction.abortDrawing();
-        return;
-      }
+    // Save to refs for external control
+    modifyInteractionRef.current = modifyInteraction;
+    drawInteractionRef.current = drawInteraction;
+    selectInteractionRef.current = selectInteraction;
+    snapInteractionRef.current = snapInteraction;
 
-      if (event.key.toLowerCase() === "z" && (event.ctrlKey || event.metaKey)) {
-        event.preventDefault();
-        drawInteraction.removeLastPoint();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
+    // Initialize with default mode 'edit' without referencing state/deps
+    drawInteraction.setActive(true);
+    modifyInteraction.setActive(false);
+    selectInteraction.setActive(false);
+    snapInteraction.setActive(true);
+
+    window.addEventListener("keydown", onKeyDown);
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", onKeyDown);
       map.setTarget(undefined);
       mapInstanceRef.current = null;
+      drawInteractionRef.current = null;
+      modifyInteractionRef.current = null;
+      selectInteractionRef.current = null;
+      snapInteractionRef.current = null;
     };
   }, []);
+
+  // React to mode changes
+  useEffect(() => {
+    applyMode(mode);
+  }, [mode]);
   return (
     <div className="relative">
       <div ref={mapRef} style={{ width: "100%", height: "100vh" }} />
@@ -106,13 +168,25 @@ export default function MapComponent() {
       </div>
       <div className="-translate-x-1/2 absolute bottom-4 left-1/2">
         <ButtonGroup>
-          <Button aria-label="Edit mode" variant="outline">
+          <Button
+            aria-label="Edit mode"
+            onClick={(): void => setMode("edit")}
+            variant={mode === "edit" ? "default" : "outline"}
+          >
             <Pencil className="h-4 w-4" />
           </Button>
-          <Button aria-label="Select mode" variant="outline">
+          <Button
+            aria-label="Select mode"
+            onClick={(): void => setMode("select")}
+            variant={mode === "select" ? "default" : "outline"}
+          >
             <MousePointer className="h-4 w-4" />
           </Button>
-          <Button aria-label="Modify mode" variant="outline">
+          <Button
+            aria-label="Modify mode"
+            onClick={(): void => setMode("modify")}
+            variant={mode === "modify" ? "default" : "outline"}
+          >
             <Settings2 className="h-4 w-4" />
           </Button>
         </ButtonGroup>
