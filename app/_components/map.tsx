@@ -11,8 +11,19 @@ import View from "ol/View";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import "ol/ol.css";
 import { Minus, MousePointer, Pencil, Plus, Settings2 } from "lucide-react";
+import type { DrawEvent } from "ol/interaction/Draw";
+import { getArea } from "ol/sphere";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 export default function MapComponent() {
   const mapRef = useRef<HTMLDivElement | null>(null);
@@ -24,12 +35,21 @@ export default function MapComponent() {
 
   type EditorMode = "edit" | "select" | "modify";
   const [mode, setMode] = useState<EditorMode>("edit");
+  const [showedData, setShowedData] = useState<
+    | {
+        type: string;
+        areaInMeterSquare: number;
+      }
+    | undefined
+  >(undefined);
 
   const applyMode = useEffectEvent((nextMode: EditorMode): void => {
     const draw = drawInteractionRef.current;
     const modify = modifyInteractionRef.current;
     const select = selectInteractionRef.current;
     const snap = snapInteractionRef.current;
+
+    select?.clearSelection();
 
     if (draw) {
       // Abort any in-progress sketch when leaving edit (draw) mode
@@ -120,10 +140,27 @@ export default function MapComponent() {
     map.addInteraction(selectInteraction);
     map.addInteraction(snapInteraction);
 
-    // Log selected features
-    // const geojsonFormatter = new GeoJSON();
     selectInteraction.on("select", (evt): void => {
-      const data = evt.selected[0]?.getGeometry();
+      if (!evt.selected.length) {
+        setShowedData(undefined);
+        return;
+      }
+      const data = evt.selected[0];
+      const dataGeometry = data.getGeometry();
+
+      if (!dataGeometry) {
+        setShowedData(undefined);
+        return;
+      }
+      const areaInMeterSquare = getArea(dataGeometry);
+      setShowedData({
+        type: dataGeometry.getType(),
+        areaInMeterSquare,
+      });
+    });
+
+    drawInteraction.on("drawend", (evt: DrawEvent): void => {
+      const data = evt.feature?.getGeometry();
       console.log(data);
     });
 
@@ -160,7 +197,7 @@ export default function MapComponent() {
     <div className="relative">
       <div ref={mapRef} style={{ width: "100%", height: "100vh" }} />
       <div className="absolute top-4 right-4">
-        <ButtonGroup orientation="vertical">
+        <ButtonGroup className="shadow-2xl" orientation="vertical">
           <Button aria-label="Zoom in" onClick={handleZoomIn} variant="outline">
             <Plus className="h-4 w-4" />
           </Button>
@@ -173,8 +210,44 @@ export default function MapComponent() {
           </Button>
         </ButtonGroup>
       </div>
+      <div className="absolute right-4 bottom-4 shadow-2xl">
+        <Card
+          className={cn("overflow-hidden", showedData ? "block" : "hidden")}
+        >
+          <CardHeader>
+            <CardTitle>Selected Polygon</CardTitle>
+            <CardDescription>
+              The details of the selected polygon will be displayed here.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="text-muted-foreground">Type</TableCell>
+                  <TableCell>{showedData?.type ?? "-"}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-muted-foreground">
+                    Area{" "}
+                    <span className="text-muted-foreground">
+                      (m<sup>2</sup>)
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    {showedData?.areaInMeterSquare.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    }) ?? "-"}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
       <div className="-translate-x-1/2 absolute bottom-4 left-1/2">
-        <ButtonGroup>
+        <ButtonGroup className="shadow-2xl">
           <Button
             aria-label="Edit mode"
             onClick={(): void => setMode("edit")}
