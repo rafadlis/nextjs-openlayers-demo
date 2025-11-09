@@ -1,9 +1,9 @@
-import MapComponent from "./_components/map"
+import MapComponent from "./_components/map";
 
 export default function Home() {
   return (
-    <article className="min-h-screen max-h-screen flex flex-col">
+    <article className="flex max-h-screen min-h-screen flex-col">
       <MapComponent />
     </article>
-  )
+  );
 }
