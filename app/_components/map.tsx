@@ -10,6 +10,9 @@ import VectorSource from "ol/source/Vector";
 import View from "ol/View";
 import { useEffect, useRef } from "react";
 import "ol/ol.css";
+import { Minus, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 
 export default function MapComponent() {
   const mapRef = useRef<HTMLDivElement | null>(null);
@@ -31,8 +34,8 @@ export default function MapComponent() {
       controls: [],
       target: mapRef.current,
       view: new View({
-        center: fromLonLat([107.940_582, -7.175_513]),
-        zoom: 12,
+        center: fromLonLat([107.887_287, -7.199_268]),
+        zoom: 18,
       }),
     });
     const modifyInteraction = new Modify({ source: drawSource });
@@ -65,6 +68,16 @@ export default function MapComponent() {
   return (
     <div className="relative">
       <div ref={mapRef} style={{ width: "100%", height: "100vh" }} />
+      <div className="absolute top-4 right-4">
+        <ButtonGroup orientation="vertical">
+          <Button variant="outline">
+            <Plus className="h-4 w-4" />
+          </Button>
+          <Button variant="outline">
+            <Minus className="h-4 w-4" />
+          </Button>
+        </ButtonGroup>
+      </div>
     </div>
   );
 }
