@@ -10,12 +10,33 @@ import VectorSource from "ol/source/Vector";
 import View from "ol/View";
 import { useEffect, useRef } from "react";
 import "ol/ol.css";
-import { Minus, Plus } from "lucide-react";
+import { Minus, MousePointer, Pencil, Plus, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 
 export default function MapComponent() {
   const mapRef = useRef<HTMLDivElement | null>(null);
+  const mapInstanceRef = useRef<OlMap | null>(null);
+
+  const handleZoomIn = (): void => {
+    const map = mapInstanceRef.current;
+    if (!map) {
+      return;
+    }
+    const view = map.getView();
+    const currentZoom = view.getZoom() ?? 0;
+    view.setZoom(currentZoom + 1);
+  };
+
+  const handleZoomOut = (): void => {
+    const map = mapInstanceRef.current;
+    if (!map) {
+      return;
+    }
+    const view = map.getView();
+    const currentZoom = view.getZoom() ?? 0;
+    view.setZoom(currentZoom - 1);
+  };
 
   useEffect(() => {
     if (!mapRef.current) {
@@ -38,6 +59,7 @@ export default function MapComponent() {
         zoom: 18,
       }),
     });
+    mapInstanceRef.current = map;
     const modifyInteraction = new Modify({ source: drawSource });
     const drawInteraction = new Draw({ type: "Polygon", source: drawSource });
     const snapInteraction = new Snap({ source: drawSource });
@@ -62,6 +84,7 @@ export default function MapComponent() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       map.setTarget(undefined);
+      mapInstanceRef.current = null;
     };
   }, []);
   return (
@@ -69,11 +92,28 @@ export default function MapComponent() {
       <div ref={mapRef} style={{ width: "100%", height: "100vh" }} />
       <div className="absolute top-4 right-4">
         <ButtonGroup orientation="vertical">
-          <Button variant="outline">
+          <Button aria-label="Zoom in" onClick={handleZoomIn} variant="outline">
             <Plus className="h-4 w-4" />
           </Button>
-          <Button variant="outline">
+          <Button
+            aria-label="Zoom out"
+            onClick={handleZoomOut}
+            variant="outline"
+          >
             <Minus className="h-4 w-4" />
+          </Button>
+        </ButtonGroup>
+      </div>
+      <div className="-translate-x-1/2 absolute bottom-4 left-1/2">
+        <ButtonGroup>
+          <Button aria-label="Edit mode" variant="outline">
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button aria-label="Select mode" variant="outline">
+            <MousePointer className="h-4 w-4" />
+          </Button>
+          <Button aria-label="Modify mode" variant="outline">
+            <Settings2 className="h-4 w-4" />
           </Button>
         </ButtonGroup>
       </div>
