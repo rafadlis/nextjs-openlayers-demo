@@ -52,7 +52,6 @@ export default function MapComponent() {
         return;
       }
 
-      // Handle Ctrl+Z (Windows/Linux) and Cmd+Z (macOS)
       if (event.key.toLowerCase() === "z" && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         drawInteraction.removeLastPoint();
