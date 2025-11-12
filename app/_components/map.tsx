@@ -23,7 +23,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Kbd } from "@/components/ui/kbd";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export default function MapComponent() {
@@ -214,7 +220,7 @@ export default function MapComponent() {
           </Button>
         </ButtonGroup>
       </div>
-      <div className="absolute right-4 bottom-4 shadow-2xl">
+      <div className="-translate-y-1/2 absolute top-1/2 left-4 shadow-2xl">
         <Card
           className={cn("overflow-hidden", showedData ? "block" : "hidden")}
         >
@@ -252,30 +258,60 @@ export default function MapComponent() {
       </div>
       <div className="-translate-x-1/2 absolute bottom-4 left-1/2">
         <ButtonGroup className="shadow-2xl">
-          <Button
-            aria-label="Edit mode"
-            onClick={(): void => setMode("edit")}
-            variant={mode === "edit" ? "default" : "outline"}
-          >
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button
-            aria-label="Select mode"
-            onClick={(): void => setMode("select")}
-            variant={mode === "select" ? "default" : "outline"}
-          >
-            <MousePointer className="h-4 w-4" />
-          </Button>
-          <Button
-            aria-label="Modify mode"
-            onClick={(): void => setMode("modify")}
-            variant={mode === "modify" ? "default" : "outline"}
-          >
-            <Settings2 className="h-4 w-4" />
-          </Button>
+          <Tooltip>
+            <Button
+              aria-label="Edit mode"
+              asChild
+              onClick={(): void => setMode("edit")}
+              variant={mode === "edit" ? "default" : "outline"}
+            >
+              <TooltipTrigger>
+                <Pencil className="h-4 w-4" />
+              </TooltipTrigger>
+            </Button>
+            <TooltipContent>
+              <p>
+                Draw <Kbd>e</Kbd>
+              </p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <Button
+              aria-label="Select mode"
+              asChild
+              onClick={(): void => setMode("select")}
+              variant={mode === "select" ? "default" : "outline"}
+            >
+              <TooltipTrigger>
+                <MousePointer className="h-4 w-4" />
+              </TooltipTrigger>
+            </Button>
+            <TooltipContent>
+              <p>
+                Select <Kbd>s</Kbd>
+              </p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <Button
+              aria-label="Modify mode"
+              asChild
+              onClick={(): void => setMode("modify")}
+              variant={mode === "modify" ? "default" : "outline"}
+            >
+              <TooltipTrigger>
+                <Settings2 className="h-4 w-4" />
+              </TooltipTrigger>
+            </Button>
+            <TooltipContent>
+              <p>
+                Modify <Kbd>m</Kbd>
+              </p>
+            </TooltipContent>
+          </Tooltip>
         </ButtonGroup>
       </div>
-      <div className="absolute top-4 left-4">
+      <div className="absolute bottom-4 left-4">
         <Badge>{crs}</Badge>
       </div>
     </div>
