@@ -40,8 +40,8 @@ export default function MapComponent() {
   const selectInteractionRef = useRef<Select | null>(null);
   const snapInteractionRef = useRef<Snap | null>(null);
 
-  type EditorMode = "edit" | "select" | "modify";
-  const [mode, setMode] = useState<EditorMode>("edit");
+  type EditorMode = "draw" | "select" | "modify";
+  const [mode, setMode] = useState<EditorMode>("draw");
   const [showedData, setShowedData] = useState<
     | {
         type: string;
@@ -61,14 +61,14 @@ export default function MapComponent() {
 
     if (draw) {
       // Abort any in-progress sketch when leaving edit (draw) mode
-      if (nextMode !== "edit") {
+      if (nextMode !== "draw") {
         try {
           draw.abortDrawing();
         } catch {
           // no-op if not drawing
         }
       }
-      draw.setActive(nextMode === "edit");
+      draw.setActive(nextMode === "draw");
     }
     if (modify) {
       modify.setActive(nextMode === "modify");
@@ -82,7 +82,9 @@ export default function MapComponent() {
     }
   });
   const onKeyDown = useEffectEvent((event: KeyboardEvent): void => {
-    if (event.key === "Escape" || event.key === "Esc") {
+    const key = event.key.toLowerCase();
+    // Abort drawing on Escape/Esc
+    if (key.startsWith("esc")) {
       try {
         drawInteractionRef.current?.abortDrawing();
       } catch {
@@ -90,9 +92,23 @@ export default function MapComponent() {
       }
       return;
     }
-    if (event.key.toLowerCase() === "z" && (event.ctrlKey || event.metaKey)) {
+    // Undo last point on Ctrl/Cmd + Z
+    const hasShortcutModifier = event.ctrlKey || event.metaKey;
+    if (hasShortcutModifier && key === "z") {
       event.preventDefault();
       drawInteractionRef.current?.removeLastPoint();
+      return;
+    }
+    // Mode switching via single-key shortcuts
+    const modeByKey: Record<string, EditorMode> = {
+      d: "draw",
+      s: "select",
+      m: "modify",
+    };
+    const nextMode = modeByKey[key];
+    if (nextMode) {
+      event.preventDefault();
+      setMode(nextMode);
     }
   });
 
@@ -262,8 +278,8 @@ export default function MapComponent() {
             <Button
               aria-label="Edit mode"
               asChild
-              onClick={(): void => setMode("edit")}
-              variant={mode === "edit" ? "default" : "outline"}
+              onClick={(): void => setMode("draw")}
+              variant={mode === "draw" ? "default" : "outline"}
             >
               <TooltipTrigger>
                 <Pencil className="h-4 w-4" />
