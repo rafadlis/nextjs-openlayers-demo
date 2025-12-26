@@ -19,6 +19,7 @@ import {
   Pencil,
   Plus,
   RefreshCcw,
+  Ruler,
   Settings2,
 } from "lucide-react";
 import Feature from "ol/Feature";
@@ -45,6 +46,7 @@ import { cn } from "@/lib/utils";
 import { getPolygons } from "../_lib/get-polygons";
 import { insertPolygon } from "../_server/insert-polygon";
 import { updatePolygonById } from "../_server/update-polygon";
+
 export default function MapComponent() {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<OlMap | null>(null);
@@ -53,6 +55,10 @@ export default function MapComponent() {
   const selectInteractionRef = useRef<Select | null>(null);
   const snapInteractionRef = useRef<Snap | null>(null);
   const vectorSourceRef = useRef<VectorSource | null>(null);
+
+  const rulerDrawInteractionRef = useRef<Draw | null>(null);
+  const rulerSnapInteractionRef = useRef<Snap | null>(null);
+  const rulerSourceRef = useRef<VectorSource | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -66,8 +72,8 @@ export default function MapComponent() {
     },
   });
   const { mutate: updatePolygon } = useMutation({
-    mutationFn: ({ id, wkt }: { id: number; wkt: string }) =>
-      updatePolygonById(id, wkt),
+    mutationFn: (data: { id: number; wkt: string }[]) =>
+      updatePolygonById(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["polygons"] });
     },
@@ -77,18 +83,20 @@ export default function MapComponent() {
   });
 
   const onModifyEnd = useEffectEvent((evt: ModifyEvent) => {
-    const geometry = evt.features.getArray()[0]?.getGeometry();
-    if (geometry) {
+    const data: { id: number; wkt: string }[] = [];
+    for (const feature of evt.features.getArray()) {
+      const geometry = feature.getGeometry();
+      if (!geometry) {
+        continue;
+      }
       const format = new WKT();
       const wktString = format.writeGeometry(geometry, {
         dataProjection: "EPSG:4326",
         featureProjection: "EPSG:3857",
       });
-      updatePolygon({
-        id: evt.features.getArray()[0]?.getId() as number,
-        wkt: wktString,
-      });
+      data.push({ id: feature.getId() as number, wkt: wktString });
     }
+    updatePolygon(data);
   });
   const { data: polygonsData, refetch: refetchPolygons } = useQuery({
     queryKey: ["polygons"],
@@ -113,7 +121,7 @@ export default function MapComponent() {
     }
   });
 
-  type EditorMode = "draw" | "select" | "modify";
+  type EditorMode = "draw" | "select" | "modify" | "ruler";
   const [mode, setMode] = useState<EditorMode>("draw");
   const [showedData, setShowedData] = useState<
     | {
@@ -131,6 +139,9 @@ export default function MapComponent() {
     const select = selectInteractionRef.current;
     const snap = snapInteractionRef.current;
 
+    const rulerDraw = rulerDrawInteractionRef.current;
+    const rulerSnap = rulerSnapInteractionRef.current;
+
     select?.clearSelection();
 
     if (draw) {
@@ -144,15 +155,28 @@ export default function MapComponent() {
       }
       draw.setActive(nextMode === "draw");
     }
+    if (rulerDraw) {
+      if (nextMode !== "ruler") {
+        try {
+          rulerDraw.abortDrawing();
+        } catch {
+          // no-op if not drawing
+        }
+      }
+      rulerDraw.setActive(nextMode === "ruler");
+    }
     if (modify) {
       modify.setActive(nextMode === "modify");
     }
     if (select) {
       select.setActive(nextMode === "select");
     }
-    if (snap) {
+    if (snap && rulerSnap) {
       // Snap is useful for drawing and modifying; disable for pure selection
-      snap.setActive(nextMode !== "select");
+      const isEditing =
+        nextMode === "draw" || nextMode === "modify" || nextMode === "ruler";
+      snap.setActive(isEditing);
+      rulerSnap.setActive(isEditing);
     }
   });
   const onKeyDown = useEffectEvent((event: KeyboardEvent): void => {
@@ -161,6 +185,7 @@ export default function MapComponent() {
     if (key.startsWith("esc")) {
       try {
         drawInteractionRef.current?.abortDrawing();
+        rulerDrawInteractionRef.current?.abortDrawing();
       } catch {
         // ignore if not drawing
       }
@@ -178,6 +203,7 @@ export default function MapComponent() {
       d: "draw",
       s: "select",
       m: "modify",
+      r: "ruler",
     };
     const nextMode = modeByKey[key];
     if (nextMode) {
@@ -219,8 +245,14 @@ export default function MapComponent() {
     const drawLayer = new VectorLayer({
       source: drawSource,
     });
+
+    const rulerSource = new VectorSource();
+    rulerSourceRef.current = rulerSource;
+    const rulerLayer = new VectorLayer({
+      source: rulerSource,
+    });
     const map = new OlMap({
-      layers: [baseLayer, drawLayer],
+      layers: [baseLayer, rulerLayer, drawLayer],
       controls: [],
       target: mapRef.current,
       view: new View({
@@ -234,10 +266,19 @@ export default function MapComponent() {
     const selectInteraction = new Select();
     const snapInteraction = new Snap({ source: drawSource });
 
+    const rulerDrawInteraction = new Draw({
+      type: "LineString",
+      source: rulerSource,
+    });
+    const rulerSnapInteraction = new Snap({ source: rulerSource });
+
     map.addInteraction(modifyInteraction);
     map.addInteraction(drawInteraction);
     map.addInteraction(selectInteraction);
     map.addInteraction(snapInteraction);
+
+    map.addInteraction(rulerDrawInteraction);
+    map.addInteraction(rulerSnapInteraction);
 
     selectInteraction.on("select", (evt): void => {
       if (!evt.selected.length) {
@@ -267,12 +308,15 @@ export default function MapComponent() {
     drawInteractionRef.current = drawInteraction;
     selectInteractionRef.current = selectInteraction;
     snapInteractionRef.current = snapInteraction;
+    rulerDrawInteractionRef.current = rulerDrawInteraction;
+    rulerSnapInteractionRef.current = rulerSnapInteraction;
 
     // Initialize with default mode 'edit' without referencing state/deps
     drawInteraction.setActive(true);
     modifyInteraction.setActive(false);
     selectInteraction.setActive(false);
     snapInteraction.setActive(true);
+    rulerSnapInteraction.setActive(false);
 
     window.addEventListener("keydown", onKeyDown);
 
@@ -431,6 +475,23 @@ export default function MapComponent() {
               <TooltipContent>
                 <p>
                   Modify <Kbd>m</Kbd>
+                </p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <Button
+                aria-label="Ruler mode"
+                asChild
+                onClick={(): void => setMode("ruler")}
+                variant={mode === "ruler" ? "default" : "outline"}
+              >
+                <TooltipTrigger>
+                  <Ruler className="h-4 w-4" />
+                </TooltipTrigger>
+              </Button>
+              <TooltipContent>
+                <p>
+                  Ruler <Kbd>r</Kbd>
                 </p>
               </TooltipContent>
             </Tooltip>
