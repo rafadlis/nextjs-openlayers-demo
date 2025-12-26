@@ -11,9 +11,17 @@ import VectorSource from "ol/source/Vector";
 import View from "ol/View";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import "ol/ol.css";
-import { useQuery } from "@tanstack/react-query";
-import { Minus, MousePointer, Pencil, Plus, Settings2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Minus,
+  MousePointer,
+  Pencil,
+  Plus,
+  RefreshCcw,
+  Settings2,
+} from "lucide-react";
 import Feature from "ol/Feature";
+import type { DrawEvent } from "ol/interaction/Draw";
 import { getArea } from "ol/sphere";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +42,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { getPolygons } from "../_lib/get-polygons";
+import { insertPolygon } from "../_server/insert-polygon";
 
 export default function MapComponent() {
   const mapRef = useRef<HTMLDivElement | null>(null);
@@ -43,6 +52,40 @@ export default function MapComponent() {
   const selectInteractionRef = useRef<Select | null>(null);
   const snapInteractionRef = useRef<Snap | null>(null);
   const vectorSourceRef = useRef<VectorSource | null>(null);
+
+  const queryClient = useQueryClient();
+
+  const { mutate: savePolygon } = useMutation({
+    mutationFn: (wkt: string) => insertPolygon(wkt),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["polygons"] });
+    },
+    onError: (error) => {
+      console.error("Failed to save polygon:", error);
+    },
+  });
+  const { data: polygonsData, refetch: refetchPolygons } = useQuery({
+    queryKey: ["polygons"],
+    queryFn: () => getPolygons(),
+  });
+
+  const onDrawEnd = useEffectEvent((evt: DrawEvent) => {
+    const geometry = evt.feature.getGeometry();
+    if (geometry) {
+      const format = new WKT();
+      const wktString = format.writeGeometry(geometry, {
+        // 1. Where the data is GOING (Database) -> We want Lat/Lon (4326)
+        dataProjection: "EPSG:4326",
+
+        // 2. Where the data is COMING FROM (Map) -> We have Meters (3857)
+        featureProjection: "EPSG:3857",
+      });
+      savePolygon(wktString);
+      setTimeout(() => {
+        vectorSourceRef.current?.removeFeature(evt.feature);
+      }, 0);
+    }
+  });
 
   type EditorMode = "draw" | "select" | "modify";
   const [mode, setMode] = useState<EditorMode>("draw");
@@ -136,11 +179,6 @@ export default function MapComponent() {
     view.setZoom(currentZoom - 1);
   };
 
-  const { data: polygonsData } = useQuery({
-    queryKey: ["polygons"],
-    queryFn: () => getPolygons(),
-  });
-
   useEffect(() => {
     if (!mapRef.current) {
       return;
@@ -193,17 +231,7 @@ export default function MapComponent() {
       });
     });
 
-    drawInteraction.on("drawend", (evt): void => {
-      const geometry = evt.feature.getGeometry();
-      if (geometry) {
-        const format = new WKT();
-        const wktString = format.writeGeometry(geometry, {
-          dataProjection: "EPSG:3857",
-          featureProjection: "EPSG:4326",
-        });
-        console.log(wktString);
-      }
-    });
+    drawInteraction.on("drawend", onDrawEnd);
 
     // Save to refs for external control
     modifyInteractionRef.current = modifyInteraction;
@@ -235,41 +263,36 @@ export default function MapComponent() {
   useEffect(() => {
     const source = vectorSourceRef.current;
 
-    // Guard clause: if map isn't ready or no data, do nothing
     if (!(source && polygonsData)) {
       return;
     }
 
-    // 1. Clear existing features to avoid duplicates
     source.clear();
 
-    // 2. Parse WKT and Transform Projections
     const format = new WKT();
 
+    console.log("polygonsData", polygonsData);
+
     const features = polygonsData.map((item) => {
-      // Assuming item.geometry is the WKT string: "POLYGON((...))"
       const geometry = format.readGeometry(item.wkt, {
-        dataProjection: "EPSG:4326", // COMING FROM: Database (Lat/Lon)
-        featureProjection: "EPSG:3857", // GOING TO: Map View (Meters)
+        dataProjection: "EPSG:4326",
+        featureProjection: "EPSG:3857",
       });
 
       const feature = new Feature({
         geometry,
       });
 
-      // Optional: Store ID so you can identify it later (e.g., for selection)
       feature.setId(item.id);
 
       return feature;
     });
 
-    // 3. Add new features to the source
     if (features.length > 0) {
       source.addFeatures(features);
     }
   }, [polygonsData]);
 
-  // React to mode changes
   useEffect(() => {
     applyMode(mode);
   }, [mode]);
@@ -377,6 +400,21 @@ export default function MapComponent() {
               <p>
                 Modify <Kbd>m</Kbd>
               </p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <Button
+              aria-label="Refresh polygons"
+              asChild
+              onClick={() => refetchPolygons()}
+              variant="outline"
+            >
+              <TooltipTrigger>
+                <RefreshCcw className="h-4 w-4" />
+              </TooltipTrigger>
+            </Button>
+            <TooltipContent>
+              <p>Refresh polygons</p>
             </TooltipContent>
           </Tooltip>
         </ButtonGroup>

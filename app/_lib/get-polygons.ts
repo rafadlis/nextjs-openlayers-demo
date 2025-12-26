@@ -1,8 +1,11 @@
+"use server";
+
 import { asc, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { polygon } from "@/db/schema";
 
 export async function getPolygons() {
+  console.log("starting to get polygons");
   const polygons = await db
     .select({
       id: polygon.id,
@@ -11,5 +14,6 @@ export async function getPolygons() {
     })
     .from(polygon)
     .orderBy(asc(polygon.id));
+  console.log(polygons);
   return polygons;
 }
