@@ -271,8 +271,6 @@ export default function MapComponent() {
 
     const format = new WKT();
 
-    console.log("polygonsData", polygonsData);
-
     const features = polygonsData.map((item) => {
       const geometry = format.readGeometry(item.wkt, {
         dataProjection: "EPSG:4326",
