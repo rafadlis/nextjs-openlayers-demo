@@ -382,76 +382,80 @@ export default function MapComponent() {
       </div>
       <div className="-translate-x-1/2 absolute bottom-4 left-1/2">
         <ButtonGroup className="shadow-2xl">
-          <Tooltip>
-            <Button
-              aria-label="Edit mode"
-              asChild
-              onClick={(): void => setMode("draw")}
-              variant={mode === "draw" ? "default" : "outline"}
-            >
-              <TooltipTrigger>
-                <Pencil className="h-4 w-4" />
-              </TooltipTrigger>
-            </Button>
-            <TooltipContent>
-              <p>
-                Draw <Kbd>e</Kbd>
-              </p>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <Button
-              aria-label="Select mode"
-              asChild
-              onClick={(): void => setMode("select")}
-              variant={mode === "select" ? "default" : "outline"}
-            >
-              <TooltipTrigger>
-                <MousePointer className="h-4 w-4" />
-              </TooltipTrigger>
-            </Button>
-            <TooltipContent>
-              <p>
-                Select <Kbd>s</Kbd>
-              </p>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <Button
-              aria-label="Modify mode"
-              asChild
-              onClick={(): void => setMode("modify")}
-              variant={mode === "modify" ? "default" : "outline"}
-            >
-              <TooltipTrigger>
-                <Settings2 className="h-4 w-4" />
-              </TooltipTrigger>
-            </Button>
-            <TooltipContent>
-              <p>
-                Modify <Kbd>m</Kbd>
-              </p>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <Button
-              aria-label="Refresh polygons"
-              asChild
-              onClick={() => {
-                queryClient.invalidateQueries({ queryKey: ["polygons"] });
+          <ButtonGroup>
+            <Tooltip>
+              <Button
+                aria-label="Edit mode"
+                asChild
+                onClick={(): void => setMode("draw")}
+                variant={mode === "draw" ? "default" : "outline"}
+              >
+                <TooltipTrigger>
+                  <Pencil className="h-4 w-4" />
+                </TooltipTrigger>
+              </Button>
+              <TooltipContent>
+                <p>
+                  Draw <Kbd>e</Kbd>
+                </p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <Button
+                aria-label="Select mode"
+                asChild
+                onClick={(): void => setMode("select")}
+                variant={mode === "select" ? "default" : "outline"}
+              >
+                <TooltipTrigger>
+                  <MousePointer className="h-4 w-4" />
+                </TooltipTrigger>
+              </Button>
+              <TooltipContent>
+                <p>
+                  Select <Kbd>s</Kbd>
+                </p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <Button
+                aria-label="Modify mode"
+                asChild
+                onClick={(): void => setMode("modify")}
+                variant={mode === "modify" ? "default" : "outline"}
+              >
+                <TooltipTrigger>
+                  <Settings2 className="h-4 w-4" />
+                </TooltipTrigger>
+              </Button>
+              <TooltipContent>
+                <p>
+                  Modify <Kbd>m</Kbd>
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </ButtonGroup>
+          <ButtonGroup>
+            <Tooltip>
+              <Button
+                aria-label="Refresh polygons"
+                asChild
+                onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ["polygons"] });
 
-                refetchPolygons();
-              }}
-              variant="outline"
-            >
-              <TooltipTrigger>
-                <RefreshCcw className="h-4 w-4" />
-              </TooltipTrigger>
-            </Button>
-            <TooltipContent>
-              <p>Refresh polygons</p>
-            </TooltipContent>
-          </Tooltip>
+                  refetchPolygons();
+                }}
+                variant="outline"
+              >
+                <TooltipTrigger>
+                  <RefreshCcw className="h-4 w-4" />
+                </TooltipTrigger>
+              </Button>
+              <TooltipContent>
+                <p>Refresh polygons</p>
+              </TooltipContent>
+            </Tooltip>
+          </ButtonGroup>
         </ButtonGroup>
       </div>
       <div className="absolute bottom-4 left-4">
