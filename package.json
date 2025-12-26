@@ -21,10 +21,10 @@
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.1",
     "lucide-react": "^0.553.0",
-    "next": "16.0.7",
+    "next": "16.1.1",
     "ol": "^10.7.0",
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-scan": "^0.4.3",
     "tailwind-merge": "^3.3.1"
   },
@@ -32,8 +32,8 @@
     "@biomejs/biome": "2.3.4",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
     "biome": "^0.3.3",
     "drizzle-kit": "^0.31.8",
     "tailwindcss": "^4",
@@ -46,7 +46,11 @@
     "onlyBuiltDependencies": [
       "esbuild",
       "sharp"
-    ]
+    ],
+    "overrides": {
+      "@types/react": "19.2.7",
+      "@types/react-dom": "19.2.3"
+    }
   },
   "packageManager": "pnpm@10.20.0+sha512.cf9998222162dd85864d0a8102e7892e7ba4ceadebbf5a31f9c2fce48dfce317a9c53b9f6464d1ef9042cba2e02ae02a9f7c143a2b438cd93c91840f0192b9dd"
 }
