@@ -133,6 +133,7 @@ export default function MapComponent() {
   >(undefined);
   const [crs, setCrs] = useState<string | undefined>(undefined);
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is a complex function that needs to be refactored.
   const applyMode = useEffectEvent((nextMode: EditorMode): void => {
     const draw = drawInteractionRef.current;
     const modify = modifyInteractionRef.current;
@@ -145,7 +146,6 @@ export default function MapComponent() {
     select?.clearSelection();
 
     if (draw) {
-      // Abort any in-progress sketch when leaving edit (draw) mode
       if (nextMode !== "draw") {
         try {
           draw.abortDrawing();
