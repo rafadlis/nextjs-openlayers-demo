@@ -25,6 +25,10 @@ import {
 import Feature from "ol/Feature";
 import type { DrawEvent } from "ol/interaction/Draw";
 import { getArea } from "ol/sphere";
+import CircleStyle from "ol/style/Circle";
+import Fill from "ol/style/Fill";
+import Stroke from "ol/style/Stroke";
+import Style from "ol/style/Style";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
@@ -46,7 +50,6 @@ import { cn } from "@/lib/utils";
 import { getPolygons } from "../_lib/get-polygons";
 import { insertPolygon } from "../_server/insert-polygon";
 import { updatePolygonById } from "../_server/update-polygon";
-
 export default function MapComponent() {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<OlMap | null>(null);
@@ -246,13 +249,26 @@ export default function MapComponent() {
       source: drawSource,
     });
 
+    const rulerStyle = new Style({
+      stroke: new Stroke({
+        color: "#f97316", // Orange-500
+        width: 2,
+        lineDash: [10, 10], // Dashed line
+      }),
+      image: new CircleStyle({
+        radius: 5,
+        fill: new Fill({ color: "#f97316" }),
+      }),
+    });
+
     const rulerSource = new VectorSource();
     rulerSourceRef.current = rulerSource;
     const rulerLayer = new VectorLayer({
       source: rulerSource,
+      style: rulerStyle,
     });
     const map = new OlMap({
-      layers: [baseLayer, rulerLayer, drawLayer],
+      layers: [baseLayer, drawLayer, rulerLayer],
       controls: [],
       target: mapRef.current,
       view: new View({
