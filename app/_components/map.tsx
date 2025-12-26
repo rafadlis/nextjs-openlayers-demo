@@ -117,6 +117,7 @@ export default function MapComponent() {
   const [mode, setMode] = useState<EditorMode>("draw");
   const [showedData, setShowedData] = useState<
     | {
+        id: number;
         type: string;
         areaInMeterSquare: number;
       }
@@ -252,6 +253,7 @@ export default function MapComponent() {
       }
       const areaInMeterSquare = getArea(dataGeometry);
       setShowedData({
+        id: data.getId() as number,
         type: dataGeometry.getType(),
         areaInMeterSquare,
       });
@@ -351,6 +353,10 @@ export default function MapComponent() {
           <CardContent>
             <Table>
               <TableBody>
+                <TableRow>
+                  <TableCell className="text-muted-foreground">ID</TableCell>
+                  <TableCell>{showedData?.id ?? "-"}</TableCell>
+                </TableRow>
                 <TableRow>
                   <TableCell className="text-muted-foreground">Type</TableCell>
                   <TableCell>{showedData?.type ?? "-"}</TableCell>
