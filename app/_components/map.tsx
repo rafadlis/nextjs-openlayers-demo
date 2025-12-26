@@ -1,5 +1,6 @@
 "use client";
 
+import WKT from "ol/format/WKT";
 import { Draw, Modify, Select, Snap } from "ol/interaction";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
@@ -10,8 +11,9 @@ import VectorSource from "ol/source/Vector";
 import View from "ol/View";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import "ol/ol.css";
+import { useQuery } from "@tanstack/react-query";
 import { Minus, MousePointer, Pencil, Plus, Settings2 } from "lucide-react";
-import type { DrawEvent } from "ol/interaction/Draw";
+import Feature from "ol/Feature";
 import { getArea } from "ol/sphere";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,6 +33,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { getPolygons } from "../_lib/get-polygons";
 
 export default function MapComponent() {
   const mapRef = useRef<HTMLDivElement | null>(null);
@@ -39,6 +42,7 @@ export default function MapComponent() {
   const modifyInteractionRef = useRef<Modify | null>(null);
   const selectInteractionRef = useRef<Select | null>(null);
   const snapInteractionRef = useRef<Snap | null>(null);
+  const vectorSourceRef = useRef<VectorSource | null>(null);
 
   type EditorMode = "draw" | "select" | "modify";
   const [mode, setMode] = useState<EditorMode>("draw");
@@ -132,6 +136,11 @@ export default function MapComponent() {
     view.setZoom(currentZoom - 1);
   };
 
+  const { data: polygonsData } = useQuery({
+    queryKey: ["polygons"],
+    queryFn: () => getPolygons(),
+  });
+
   useEffect(() => {
     if (!mapRef.current) {
       return;
@@ -141,6 +150,7 @@ export default function MapComponent() {
       source: new OSM(),
     });
     const drawSource = new VectorSource();
+    vectorSourceRef.current = drawSource;
     const drawLayer = new VectorLayer({
       source: drawSource,
     });
@@ -183,9 +193,16 @@ export default function MapComponent() {
       });
     });
 
-    drawInteraction.on("drawend", (evt: DrawEvent): void => {
-      const data = evt.feature?.getGeometry();
-      console.log(data);
+    drawInteraction.on("drawend", (evt): void => {
+      const geometry = evt.feature.getGeometry();
+      if (geometry) {
+        const format = new WKT();
+        const wktString = format.writeGeometry(geometry, {
+          dataProjection: "EPSG:3857",
+          featureProjection: "EPSG:4326",
+        });
+        console.log(wktString);
+      }
     });
 
     // Save to refs for external control
@@ -214,6 +231,43 @@ export default function MapComponent() {
       snapInteractionRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const source = vectorSourceRef.current;
+
+    // Guard clause: if map isn't ready or no data, do nothing
+    if (!(source && polygonsData)) {
+      return;
+    }
+
+    // 1. Clear existing features to avoid duplicates
+    source.clear();
+
+    // 2. Parse WKT and Transform Projections
+    const format = new WKT();
+
+    const features = polygonsData.map((item) => {
+      // Assuming item.geometry is the WKT string: "POLYGON((...))"
+      const geometry = format.readGeometry(item.wkt, {
+        dataProjection: "EPSG:4326", // COMING FROM: Database (Lat/Lon)
+        featureProjection: "EPSG:3857", // GOING TO: Map View (Meters)
+      });
+
+      const feature = new Feature({
+        geometry,
+      });
+
+      // Optional: Store ID so you can identify it later (e.g., for selection)
+      feature.setId(item.id);
+
+      return feature;
+    });
+
+    // 3. Add new features to the source
+    if (features.length > 0) {
+      source.addFeatures(features);
+    }
+  }, [polygonsData]);
 
   // React to mode changes
   useEffect(() => {
