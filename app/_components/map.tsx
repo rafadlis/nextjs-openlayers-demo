@@ -51,6 +51,7 @@ import { getPolygons } from "../_lib/get-polygons";
 import { insertPolygon } from "../_server/insert-polygon";
 import { updatePolygonById } from "../_server/update-polygon";
 export default function MapComponent() {
+  // MARK: ref
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<OlMap | null>(null);
   const drawInteractionRef = useRef<Draw | null>(null);
@@ -63,6 +64,7 @@ export default function MapComponent() {
   const rulerSnapInteractionRef = useRef<Snap | null>(null);
   const rulerSourceRef = useRef<VectorSource | null>(null);
 
+  // MARK: query
   const queryClient = useQueryClient();
 
   const { mutate: savePolygon } = useMutation({
@@ -124,6 +126,7 @@ export default function MapComponent() {
     }
   });
 
+  // MARK: state
   type EditorMode = "draw" | "select" | "modify" | "ruler";
   const [mode, setMode] = useState<EditorMode>("draw");
   const [showedData, setShowedData] = useState<
@@ -235,6 +238,7 @@ export default function MapComponent() {
     view.setZoom(currentZoom - 1);
   };
 
+  // MARK: - effect
   useEffect(() => {
     if (!mapRef.current) {
       return;
@@ -290,11 +294,13 @@ export default function MapComponent() {
 
     map.addInteraction(modifyInteraction);
     map.addInteraction(drawInteraction);
+    map.addInteraction(rulerDrawInteraction);
+    
     map.addInteraction(selectInteraction);
+
+    map.addInteraction(rulerSnapInteraction);
     map.addInteraction(snapInteraction);
 
-    map.addInteraction(rulerDrawInteraction);
-    map.addInteraction(rulerSnapInteraction);
 
     selectInteraction.on("select", (evt): void => {
       if (!evt.selected.length) {
@@ -349,6 +355,7 @@ export default function MapComponent() {
     };
   }, []);
 
+  // MARK: effect
   useEffect(() => {
     const source = vectorSourceRef.current;
 
@@ -383,6 +390,8 @@ export default function MapComponent() {
   useEffect(() => {
     applyMode(mode);
   }, [mode]);
+
+  // MARK: return
   return (
     <div className="relative">
       <div ref={mapRef} style={{ width: "100%", height: "100vh" }} />
