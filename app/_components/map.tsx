@@ -404,7 +404,11 @@ export default function MapComponent() {
             <Button
               aria-label="Refresh polygons"
               asChild
-              onClick={() => refetchPolygons()}
+              onClick={() => {
+                queryClient.invalidateQueries({ queryKey: ["polygons"] });
+
+                refetchPolygons();
+              }}
               variant="outline"
             >
               <TooltipTrigger>
