@@ -2,6 +2,7 @@
 
 import WKT from "ol/format/WKT";
 import { Draw, Modify, Select, Snap } from "ol/interaction";
+import type { ModifyEvent } from "ol/interaction/Modify";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
 import OlMap from "ol/Map";
@@ -43,7 +44,7 @@ import {
 import { cn } from "@/lib/utils";
 import { getPolygons } from "../_lib/get-polygons";
 import { insertPolygon } from "../_server/insert-polygon";
-
+import { updatePolygonById } from "../_server/update-polygon";
 export default function MapComponent() {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<OlMap | null>(null);
@@ -63,6 +64,31 @@ export default function MapComponent() {
     onError: (error) => {
       console.error("Failed to save polygon:", error);
     },
+  });
+  const { mutate: updatePolygon } = useMutation({
+    mutationFn: ({ id, wkt }: { id: number; wkt: string }) =>
+      updatePolygonById(id, wkt),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["polygons"] });
+    },
+    onError: (error) => {
+      console.error("Failed to update polygon:", error);
+    },
+  });
+
+  const onModifyEnd = useEffectEvent((evt: ModifyEvent) => {
+    const geometry = evt.features.getArray()[0]?.getGeometry();
+    if (geometry) {
+      const format = new WKT();
+      const wktString = format.writeGeometry(geometry, {
+        dataProjection: "EPSG:4326",
+        featureProjection: "EPSG:3857",
+      });
+      updatePolygon({
+        id: evt.features.getArray()[0]?.getId() as number,
+        wkt: wktString,
+      });
+    }
   });
   const { data: polygonsData, refetch: refetchPolygons } = useQuery({
     queryKey: ["polygons"],
@@ -232,6 +258,7 @@ export default function MapComponent() {
     });
 
     drawInteraction.on("drawend", onDrawEnd);
+    modifyInteraction.on("modifyend", onModifyEnd);
 
     // Save to refs for external control
     modifyInteractionRef.current = modifyInteraction;
