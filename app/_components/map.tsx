@@ -525,7 +525,7 @@ export default function MapComponent() {
               </Button>
               <TooltipContent>
                 <p>
-                  Draw <Kbd>e</Kbd>
+                  Draw <Kbd>d</Kbd>
                 </p>
               </TooltipContent>
             </Tooltip>
