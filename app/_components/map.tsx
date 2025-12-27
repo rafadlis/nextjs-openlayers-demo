@@ -88,6 +88,12 @@ export default function MapComponent() {
     },
     onError: (error) => {
       console.error("Failed to save polygon:", error);
+
+      for (const f of vectorSourceRef.current?.getFeatures() ?? []) {
+        if (f.getId() === "pending") {
+          vectorSourceRef.current?.removeFeature(f);
+        }
+      }
     },
   });
   const { mutate: updatePolygon } = useMutation({
@@ -116,7 +122,7 @@ export default function MapComponent() {
   const onModifyEnd = useEffectEvent((evt: ModifyEvent) => {
     const data: { id: number; wkt: string }[] = [];
     for (const feature of evt.features.getArray()) {
-      const id = feature.getId()
+      const id = feature.getId();
       const geometry = feature.getGeometry();
       if (!geometry || id === undefined) {
         continue;
@@ -130,7 +136,7 @@ export default function MapComponent() {
     }
     updatePolygon(data);
   });
-  const { data: polygonsData, refetch: refetchPolygons } = useQuery({
+  const { data: polygonsData } = useQuery({
     queryKey: ["polygons"],
     queryFn: () => getPolygons(),
   });
@@ -140,7 +146,7 @@ export default function MapComponent() {
     const geometry = feature.getGeometry();
 
     if (geometry) {
-      feature.setId("pending")
+      feature.setId("pending");
       const format = new WKT();
       const wktString = format.writeGeometry(geometry, {
         // 1. Where the data is GOING (Database) -> We want Lat/Lon (4326)
@@ -435,45 +441,49 @@ export default function MapComponent() {
   }, []);
 
   // MARK: new data
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is a complex function that needs to be refactored.
   useEffect(() => {
     const source = vectorSourceRef.current;
 
-    if (!source || !polygonsData) {
+    if (!(source && polygonsData)) {
       return;
     }
 
     const format = new WKT();
-    
+
     // 1. Get a set of IDs currently on the server
     const serverIds = new Set(polygonsData.map((p) => p.id));
 
     // 2. Iterate existing features on the map to clean up old ones
-    source.getFeatures().forEach((feature) => {
+    for (const feature of source.getFeatures()) {
       const id = feature.getId();
 
-      // If the feature has a numeric ID (it's a saved polygon) 
+      // If the feature has a numeric ID (it's a saved polygon)
       // AND it is no longer in the server list -> Remove it.
       if (typeof id === "number" && !serverIds.has(id)) {
         source.removeFeature(feature);
       }
-      
+
       // OPTIONAL: If we just received new data, and we have a "pending" feature (local draw),
       // we can remove it now because the "real" one from the server is about to be added.
       // This prevents duplicates (one local, one server).
       if (id === "pending") {
-         // Only remove pending if we are sure the new data includes our latest save.
-         // A simple heuristic: if we are adding *any* new features, clear the pending ones.
-         source.removeFeature(feature);
+        // Only remove pending if we are sure the new data includes our latest save.
+        // A simple heuristic: if we are adding *any* new features, clear the pending ones.
+        source.removeFeature(feature);
       }
-    });
+    }
 
     // 3. Add ONLY the new features that aren't on the map yet
     const newFeaturesToInsert: Feature[] = [];
-    
-    polygonsData.forEach((item) => {
+
+    for (const item of polygonsData) {
       const existingFeature = source.getFeatureById(item.id);
-      
-      if (!existingFeature) {
+
+      if (existingFeature) {
+        // It exists! (Optional: You could update geometry here if needed)
+        // existingFeature.setGeometry(...)
+      } else {
         // It's new! Create it.
         const geometry = format.readGeometry(item.wkt, {
           dataProjection: "EPSG:4326",
@@ -482,11 +492,8 @@ export default function MapComponent() {
         const feature = new Feature({ geometry });
         feature.setId(item.id);
         newFeaturesToInsert.push(feature);
-      } else {
-        // It exists! (Optional: You could update geometry here if needed)
-        // existingFeature.setGeometry(...)
       }
-    });
+    }
 
     if (newFeaturesToInsert.length > 0) {
       source.addFeatures(newFeaturesToInsert);
