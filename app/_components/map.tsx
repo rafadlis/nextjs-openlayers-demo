@@ -124,8 +124,11 @@ export default function MapComponent() {
   });
 
   const onDrawEnd = useEffectEvent((evt: DrawEvent) => {
-    const geometry = evt.feature.getGeometry();
+    const feature = evt.feature;
+    const geometry = feature.getGeometry();
+
     if (geometry) {
+      feature.setId("pending")
       const format = new WKT();
       const wktString = format.writeGeometry(geometry, {
         // 1. Where the data is GOING (Database) -> We want Lat/Lon (4326)
@@ -135,9 +138,6 @@ export default function MapComponent() {
         featureProjection: "EPSG:3857",
       });
       savePolygon(wktString);
-      setTimeout(() => {
-        vectorSourceRef.current?.removeFeature(evt.feature);
-      }, 0);
     }
   });
 
@@ -426,31 +426,58 @@ export default function MapComponent() {
   useEffect(() => {
     const source = vectorSourceRef.current;
 
-    if (!(source && polygonsData)) {
+    if (!source || !polygonsData) {
       return;
     }
 
-    source.clear();
-
     const format = new WKT();
+    
+    // 1. Get a set of IDs currently on the server
+    const serverIds = new Set(polygonsData.map((p) => p.id));
 
-    const features = polygonsData.map((item) => {
-      const geometry = format.readGeometry(item.wkt, {
-        dataProjection: "EPSG:4326",
-        featureProjection: "EPSG:3857",
-      });
+    // 2. Iterate existing features on the map to clean up old ones
+    source.getFeatures().forEach((feature) => {
+      const id = feature.getId();
 
-      const feature = new Feature({
-        geometry,
-      });
-
-      feature.setId(item.id);
-
-      return feature;
+      // If the feature has a numeric ID (it's a saved polygon) 
+      // AND it is no longer in the server list -> Remove it.
+      if (typeof id === "number" && !serverIds.has(id)) {
+        source.removeFeature(feature);
+      }
+      
+      // OPTIONAL: If we just received new data, and we have a "pending" feature (local draw),
+      // we can remove it now because the "real" one from the server is about to be added.
+      // This prevents duplicates (one local, one server).
+      if (id === "pending") {
+         // Only remove pending if we are sure the new data includes our latest save.
+         // A simple heuristic: if we are adding *any* new features, clear the pending ones.
+         source.removeFeature(feature);
+      }
     });
 
-    if (features.length > 0) {
-      source.addFeatures(features);
+    // 3. Add ONLY the new features that aren't on the map yet
+    const newFeaturesToInsert: Feature[] = [];
+    
+    polygonsData.forEach((item) => {
+      const existingFeature = source.getFeatureById(item.id);
+      
+      if (!existingFeature) {
+        // It's new! Create it.
+        const geometry = format.readGeometry(item.wkt, {
+          dataProjection: "EPSG:4326",
+          featureProjection: "EPSG:3857",
+        });
+        const feature = new Feature({ geometry });
+        feature.setId(item.id);
+        newFeaturesToInsert.push(feature);
+      } else {
+        // It exists! (Optional: You could update geometry here if needed)
+        // existingFeature.setGeometry(...)
+      }
+    });
+
+    if (newFeaturesToInsert.length > 0) {
+      source.addFeatures(newFeaturesToInsert);
     }
   }, [polygonsData]);
 
