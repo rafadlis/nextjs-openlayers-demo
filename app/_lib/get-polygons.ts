@@ -1,3 +1,5 @@
+"use server";
+
 import { asc, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { polygon } from "@/db/schema";

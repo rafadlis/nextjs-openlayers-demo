@@ -2,6 +2,7 @@
 
 import WKT from "ol/format/WKT";
 import { Draw, Modify, Select, Snap } from "ol/interaction";
+import type { ModifyEvent } from "ol/interaction/Modify";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
 import OlMap from "ol/Map";
@@ -11,10 +12,23 @@ import VectorSource from "ol/source/Vector";
 import View from "ol/View";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import "ol/ol.css";
-import { useQuery } from "@tanstack/react-query";
-import { Minus, MousePointer, Pencil, Plus, Settings2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Minus,
+  MousePointer,
+  Pencil,
+  Plus,
+  RefreshCcw,
+  Ruler,
+  Settings2,
+} from "lucide-react";
 import Feature from "ol/Feature";
+import type { DrawEvent } from "ol/interaction/Draw";
 import { getArea } from "ol/sphere";
+import CircleStyle from "ol/style/Circle";
+import Fill from "ol/style/Fill";
+import Stroke from "ol/style/Stroke";
+import Style from "ol/style/Style";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
@@ -34,8 +48,24 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { getPolygons } from "../_lib/get-polygons";
+import { deletePolygonById } from "../_server/delete-polygon";
+import { insertPolygon } from "../_server/insert-polygon";
+import { updatePolygonById } from "../_server/update-polygon";
 
+/**
+ * Render an interactive OpenLayers map with drawing, modifying, selecting, and ruler tools, and synchronize polygon data with the server.
+ *
+ * The component provides:
+ * - Persistent polygon CRUD via React Query (insert, update, delete) with WKT conversion and projection handling.
+ * - Mode switching (draw, select, modify, ruler) including keyboard shortcuts (d, s, m, r), snapping, and undo/abort controls.
+ * - Selection UI that shows selected polygon ID, geometry type, and area in square meters.
+ * - A separate local ruler layer for measuring (does not persist to the server).
+ * - Zoom controls, CRS badge, and a refresh action to re-fetch polygons from the server.
+ *
+ * @returns The rendered map component JSX.
+ */
 export default function MapComponent() {
+  // MARK: ref
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<OlMap | null>(null);
   const drawInteractionRef = useRef<Draw | null>(null);
@@ -44,10 +74,134 @@ export default function MapComponent() {
   const snapInteractionRef = useRef<Snap | null>(null);
   const vectorSourceRef = useRef<VectorSource | null>(null);
 
-  type EditorMode = "draw" | "select" | "modify";
+  const rulerDrawInteractionRef = useRef<Draw | null>(null);
+  const rulerSnapInteractionRef = useRef<Snap | null>(null);
+  const rulerSourceRef = useRef<VectorSource | null>(null);
+
+  // MARK: query
+  const queryClient = useQueryClient();
+
+  const { mutate: savePolygon } = useMutation({
+    mutationFn: (wkt: string) => insertPolygon(wkt),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["polygons"] });
+    },
+    onError: (error) => {
+      console.error("Failed to save polygon:", error);
+
+      for (const f of vectorSourceRef.current?.getFeatures() ?? []) {
+        if (f.getId() === "pending") {
+          vectorSourceRef.current?.removeFeature(f);
+        }
+      }
+    },
+  });
+  const { mutate: updatePolygon } = useMutation({
+    mutationFn: (data: { id: number; wkt: string }[]) =>
+      updatePolygonById(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["polygons"] });
+    },
+    onError: (error) => {
+      console.error("Failed to update polygon:", error);
+    },
+  });
+  const { mutate: deletePolygon } = useMutation({
+    mutationFn: (id: number) => deletePolygonById(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["polygons"] });
+      // Clear selection and UI data on success
+      selectInteractionRef.current?.getFeatures().clear();
+      setShowedData(undefined);
+    },
+    onError: (error) => {
+      console.error("Failed to delete polygon:", error);
+    },
+  });
+
+  const onModifyEnd = useEffectEvent((evt: ModifyEvent) => {
+    const data: { id: number; wkt: string }[] = [];
+    for (const feature of evt.features.getArray()) {
+      const id = feature.getId();
+      const geometry = feature.getGeometry();
+      if (!geometry || id === undefined) {
+        continue;
+      }
+      const format = new WKT();
+      const wktString = format.writeGeometry(geometry, {
+        dataProjection: "EPSG:4326",
+        featureProjection: "EPSG:3857",
+      });
+      data.push({ id: Number(id), wkt: wktString });
+    }
+    updatePolygon(data);
+  });
+  const { data: polygonsData } = useQuery({
+    queryKey: ["polygons"],
+    queryFn: () => getPolygons(),
+  });
+
+  const onDrawEnd = useEffectEvent((evt: DrawEvent) => {
+    const feature = evt.feature;
+    const geometry = feature.getGeometry();
+
+    if (geometry) {
+      feature.setId("pending");
+      const format = new WKT();
+      const wktString = format.writeGeometry(geometry, {
+        // 1. Where the data is GOING (Database) -> We want Lat/Lon (4326)
+        dataProjection: "EPSG:4326",
+
+        // 2. Where the data is COMING FROM (Map) -> We have Meters (3857)
+        featureProjection: "EPSG:3857",
+      });
+      savePolygon(wktString);
+    }
+  });
+
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is a complex function that needs to be refactored.
+  const handleDelete = useEffectEvent(() => {
+    const select = selectInteractionRef.current;
+    if (!select) {
+      return;
+    }
+
+    const selectedFeatures = select.getFeatures();
+
+    // Iterate backward so removing items doesn't mess up the loop
+    for (const feature of selectedFeatures.getArray().slice()) {
+      // CASE A: It is a Ruler (Local only)
+      if (rulerSourceRef.current?.hasFeature(feature)) {
+        rulerSourceRef.current.removeFeature(feature);
+        selectedFeatures.remove(feature); // Deselect
+      }
+
+      // CASE B: It is a Polygon (Database)
+      else if (vectorSourceRef.current?.hasFeature(feature)) {
+        const id = feature.getId();
+        if (id) {
+          // Trigger server delete
+          deletePolygon(Number(id));
+        } else {
+          // Fallback for unsaved features
+          vectorSourceRef.current.removeFeature(feature);
+          selectedFeatures.remove(feature);
+        }
+      }
+    }
+
+    // Hide the info card if nothing is selected anymore
+    if (selectedFeatures.getLength() === 0) {
+      setShowedData(undefined);
+    }
+  });
+
+  // MARK: utilty
+  type EditorMode = "draw" | "select" | "modify" | "ruler";
   const [mode, setMode] = useState<EditorMode>("draw");
   const [showedData, setShowedData] = useState<
     | {
+        id: number;
         type: string;
         areaInMeterSquare: number;
       }
@@ -55,16 +209,19 @@ export default function MapComponent() {
   >(undefined);
   const [crs, setCrs] = useState<string | undefined>(undefined);
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is a complex function that needs to be refactored.
   const applyMode = useEffectEvent((nextMode: EditorMode): void => {
     const draw = drawInteractionRef.current;
     const modify = modifyInteractionRef.current;
     const select = selectInteractionRef.current;
     const snap = snapInteractionRef.current;
 
+    const rulerDraw = rulerDrawInteractionRef.current;
+    const rulerSnap = rulerSnapInteractionRef.current;
+
     select?.clearSelection();
 
     if (draw) {
-      // Abort any in-progress sketch when leaving edit (draw) mode
       if (nextMode !== "draw") {
         try {
           draw.abortDrawing();
@@ -74,23 +231,46 @@ export default function MapComponent() {
       }
       draw.setActive(nextMode === "draw");
     }
+    if (rulerDraw) {
+      if (nextMode !== "ruler") {
+        try {
+          rulerDraw.abortDrawing();
+        } catch {
+          // no-op if not drawing
+        }
+      }
+      rulerDraw.setActive(nextMode === "ruler");
+    }
     if (modify) {
       modify.setActive(nextMode === "modify");
     }
     if (select) {
       select.setActive(nextMode === "select");
     }
-    if (snap) {
+    if (snap && rulerSnap) {
       // Snap is useful for drawing and modifying; disable for pure selection
-      snap.setActive(nextMode !== "select");
+      const isEditing =
+        nextMode === "draw" || nextMode === "modify" || nextMode === "ruler";
+      snap.setActive(isEditing);
+      rulerSnap.setActive(isEditing);
     }
   });
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is a complex function that needs to be refactored.
   const onKeyDown = useEffectEvent((event: KeyboardEvent): void => {
     const key = event.key.toLowerCase();
+    if (key === "delete" || key === "backspace") {
+      // Prevent browser back navigation if focus is on body
+      if (document.activeElement === document.body) {
+        event.preventDefault();
+      }
+      handleDelete();
+      return;
+    }
     // Abort drawing on Escape/Esc
     if (key.startsWith("esc")) {
       try {
         drawInteractionRef.current?.abortDrawing();
+        rulerDrawInteractionRef.current?.abortDrawing();
       } catch {
         // ignore if not drawing
       }
@@ -108,6 +288,7 @@ export default function MapComponent() {
       d: "draw",
       s: "select",
       m: "modify",
+      r: "ruler",
     };
     const nextMode = modeByKey[key];
     if (nextMode) {
@@ -136,11 +317,7 @@ export default function MapComponent() {
     view.setZoom(currentZoom - 1);
   };
 
-  const { data: polygonsData } = useQuery({
-    queryKey: ["polygons"],
-    queryFn: () => getPolygons(),
-  });
-
+  // MARK: main
   useEffect(() => {
     if (!mapRef.current) {
       return;
@@ -154,8 +331,27 @@ export default function MapComponent() {
     const drawLayer = new VectorLayer({
       source: drawSource,
     });
+
+    const rulerStyle = new Style({
+      stroke: new Stroke({
+        color: "#f97316", // Orange-500
+        width: 2,
+        lineDash: [10, 10], // Dashed line
+      }),
+      image: new CircleStyle({
+        radius: 5,
+        fill: new Fill({ color: "#f97316" }),
+      }),
+    });
+
+    const rulerSource = new VectorSource();
+    rulerSourceRef.current = rulerSource;
+    const rulerLayer = new VectorLayer({
+      source: rulerSource,
+      style: rulerStyle,
+    });
     const map = new OlMap({
-      layers: [baseLayer, drawLayer],
+      layers: [baseLayer, drawLayer, rulerLayer],
       controls: [],
       target: mapRef.current,
       view: new View({
@@ -169,9 +365,19 @@ export default function MapComponent() {
     const selectInteraction = new Select();
     const snapInteraction = new Snap({ source: drawSource });
 
+    const rulerDrawInteraction = new Draw({
+      type: "LineString",
+      source: rulerSource,
+    });
+    const rulerSnapInteraction = new Snap({ source: rulerSource });
+
     map.addInteraction(modifyInteraction);
     map.addInteraction(drawInteraction);
+    map.addInteraction(rulerDrawInteraction);
+
     map.addInteraction(selectInteraction);
+
+    map.addInteraction(rulerSnapInteraction);
     map.addInteraction(snapInteraction);
 
     selectInteraction.on("select", (evt): void => {
@@ -187,35 +393,35 @@ export default function MapComponent() {
         return;
       }
       const areaInMeterSquare = getArea(dataGeometry);
+      const featureId = data.getId();
+      if (featureId === undefined) {
+        setShowedData(undefined);
+        return;
+      }
       setShowedData({
+        id: Number(featureId),
         type: dataGeometry.getType(),
         areaInMeterSquare,
       });
     });
 
-    drawInteraction.on("drawend", (evt): void => {
-      const geometry = evt.feature.getGeometry();
-      if (geometry) {
-        const format = new WKT();
-        const wktString = format.writeGeometry(geometry, {
-          dataProjection: "EPSG:3857",
-          featureProjection: "EPSG:4326",
-        });
-        console.log(wktString);
-      }
-    });
+    drawInteraction.on("drawend", onDrawEnd);
+    modifyInteraction.on("modifyend", onModifyEnd);
 
     // Save to refs for external control
     modifyInteractionRef.current = modifyInteraction;
     drawInteractionRef.current = drawInteraction;
     selectInteractionRef.current = selectInteraction;
     snapInteractionRef.current = snapInteraction;
+    rulerDrawInteractionRef.current = rulerDrawInteraction;
+    rulerSnapInteractionRef.current = rulerSnapInteraction;
 
     // Initialize with default mode 'edit' without referencing state/deps
     drawInteraction.setActive(true);
     modifyInteraction.setActive(false);
     selectInteraction.setActive(false);
     snapInteraction.setActive(true);
+    rulerSnapInteraction.setActive(false);
 
     window.addEventListener("keydown", onKeyDown);
 
@@ -229,50 +435,76 @@ export default function MapComponent() {
       modifyInteractionRef.current = null;
       selectInteractionRef.current = null;
       snapInteractionRef.current = null;
+      rulerDrawInteractionRef.current = null;
+      rulerSnapInteractionRef.current = null;
     };
   }, []);
 
+  // MARK: new data
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is a complex function that needs to be refactored.
   useEffect(() => {
     const source = vectorSourceRef.current;
 
-    // Guard clause: if map isn't ready or no data, do nothing
     if (!(source && polygonsData)) {
       return;
     }
 
-    // 1. Clear existing features to avoid duplicates
-    source.clear();
-
-    // 2. Parse WKT and Transform Projections
     const format = new WKT();
 
-    const features = polygonsData.map((item) => {
-      // Assuming item.geometry is the WKT string: "POLYGON((...))"
-      const geometry = format.readGeometry(item.wkt, {
-        dataProjection: "EPSG:4326", // COMING FROM: Database (Lat/Lon)
-        featureProjection: "EPSG:3857", // GOING TO: Map View (Meters)
-      });
+    // 1. Get a set of IDs currently on the server
+    const serverIds = new Set(polygonsData.map((p) => p.id));
 
-      const feature = new Feature({
-        geometry,
-      });
+    // 2. Iterate existing features on the map to clean up old ones
+    for (const feature of source.getFeatures()) {
+      const id = feature.getId();
 
-      // Optional: Store ID so you can identify it later (e.g., for selection)
-      feature.setId(item.id);
+      // If the feature has a numeric ID (it's a saved polygon)
+      // AND it is no longer in the server list -> Remove it.
+      if (typeof id === "number" && !serverIds.has(id)) {
+        source.removeFeature(feature);
+      }
 
-      return feature;
-    });
+      // OPTIONAL: If we just received new data, and we have a "pending" feature (local draw),
+      // we can remove it now because the "real" one from the server is about to be added.
+      // This prevents duplicates (one local, one server).
+      if (id === "pending") {
+        // Only remove pending if we are sure the new data includes our latest save.
+        // A simple heuristic: if we are adding *any* new features, clear the pending ones.
+        source.removeFeature(feature);
+      }
+    }
 
-    // 3. Add new features to the source
-    if (features.length > 0) {
-      source.addFeatures(features);
+    // 3. Add ONLY the new features that aren't on the map yet
+    const newFeaturesToInsert: Feature[] = [];
+
+    for (const item of polygonsData) {
+      const existingFeature = source.getFeatureById(item.id);
+
+      if (existingFeature) {
+        // It exists! (Optional: You could update geometry here if needed)
+        // existingFeature.setGeometry(...)
+      } else {
+        // It's new! Create it.
+        const geometry = format.readGeometry(item.wkt, {
+          dataProjection: "EPSG:4326",
+          featureProjection: "EPSG:3857",
+        });
+        const feature = new Feature({ geometry });
+        feature.setId(item.id);
+        newFeaturesToInsert.push(feature);
+      }
+    }
+
+    if (newFeaturesToInsert.length > 0) {
+      source.addFeatures(newFeaturesToInsert);
     }
   }, [polygonsData]);
 
-  // React to mode changes
   useEffect(() => {
     applyMode(mode);
   }, [mode]);
+
+  // MARK: return
   return (
     <div className="relative">
       <div ref={mapRef} style={{ width: "100%", height: "100vh" }} />
@@ -304,6 +536,10 @@ export default function MapComponent() {
             <Table>
               <TableBody>
                 <TableRow>
+                  <TableCell className="text-muted-foreground">ID</TableCell>
+                  <TableCell>{showedData?.id ?? "-"}</TableCell>
+                </TableRow>
+                <TableRow>
                   <TableCell className="text-muted-foreground">Type</TableCell>
                   <TableCell>{showedData?.type ?? "-"}</TableCell>
                 </TableRow>
@@ -328,57 +564,95 @@ export default function MapComponent() {
       </div>
       <div className="-translate-x-1/2 absolute bottom-4 left-1/2">
         <ButtonGroup className="shadow-2xl">
-          <Tooltip>
-            <Button
-              aria-label="Edit mode"
-              asChild
-              onClick={(): void => setMode("draw")}
-              variant={mode === "draw" ? "default" : "outline"}
-            >
-              <TooltipTrigger>
-                <Pencil className="h-4 w-4" />
-              </TooltipTrigger>
-            </Button>
-            <TooltipContent>
-              <p>
-                Draw <Kbd>e</Kbd>
-              </p>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <Button
-              aria-label="Select mode"
-              asChild
-              onClick={(): void => setMode("select")}
-              variant={mode === "select" ? "default" : "outline"}
-            >
-              <TooltipTrigger>
-                <MousePointer className="h-4 w-4" />
-              </TooltipTrigger>
-            </Button>
-            <TooltipContent>
-              <p>
-                Select <Kbd>s</Kbd>
-              </p>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <Button
-              aria-label="Modify mode"
-              asChild
-              onClick={(): void => setMode("modify")}
-              variant={mode === "modify" ? "default" : "outline"}
-            >
-              <TooltipTrigger>
-                <Settings2 className="h-4 w-4" />
-              </TooltipTrigger>
-            </Button>
-            <TooltipContent>
-              <p>
-                Modify <Kbd>m</Kbd>
-              </p>
-            </TooltipContent>
-          </Tooltip>
+          <ButtonGroup>
+            <Tooltip>
+              <Button
+                aria-label="Edit mode"
+                asChild
+                onClick={(): void => setMode("draw")}
+                variant={mode === "draw" ? "default" : "outline"}
+              >
+                <TooltipTrigger>
+                  <Pencil className="h-4 w-4" />
+                </TooltipTrigger>
+              </Button>
+              <TooltipContent>
+                <p>
+                  Draw <Kbd>d</Kbd>
+                </p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <Button
+                aria-label="Select mode"
+                asChild
+                onClick={(): void => setMode("select")}
+                variant={mode === "select" ? "default" : "outline"}
+              >
+                <TooltipTrigger>
+                  <MousePointer className="h-4 w-4" />
+                </TooltipTrigger>
+              </Button>
+              <TooltipContent>
+                <p>
+                  Select <Kbd>s</Kbd>
+                </p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <Button
+                aria-label="Modify mode"
+                asChild
+                onClick={(): void => setMode("modify")}
+                variant={mode === "modify" ? "default" : "outline"}
+              >
+                <TooltipTrigger>
+                  <Settings2 className="h-4 w-4" />
+                </TooltipTrigger>
+              </Button>
+              <TooltipContent>
+                <p>
+                  Modify <Kbd>m</Kbd>
+                </p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <Button
+                aria-label="Ruler mode"
+                asChild
+                onClick={(): void => setMode("ruler")}
+                variant={mode === "ruler" ? "default" : "outline"}
+              >
+                <TooltipTrigger>
+                  <Ruler className="h-4 w-4" />
+                </TooltipTrigger>
+              </Button>
+              <TooltipContent>
+                <p>
+                  Ruler <Kbd>r</Kbd>
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </ButtonGroup>
+          <ButtonGroup>
+            <Tooltip>
+              <Button
+                aria-label="Refresh polygons"
+                asChild
+                onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ["polygons"] });
+                }}
+                variant="outline"
+              >
+                <TooltipTrigger>
+                  <RefreshCcw className="h-4 w-4" />
+                </TooltipTrigger>
+              </Button>
+              <TooltipContent>
+                <p>Refresh polygons</p>
+              </TooltipContent>
+            </Tooltip>
+          </ButtonGroup>
         </ButtonGroup>
       </div>
       <div className="absolute bottom-4 left-4">
