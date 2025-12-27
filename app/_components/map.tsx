@@ -104,8 +104,9 @@ export default function MapComponent() {
   const onModifyEnd = useEffectEvent((evt: ModifyEvent) => {
     const data: { id: number; wkt: string }[] = [];
     for (const feature of evt.features.getArray()) {
+      const id = feature.getId()
       const geometry = feature.getGeometry();
-      if (!geometry) {
+      if (!geometry || id === undefined) {
         continue;
       }
       const format = new WKT();
@@ -113,7 +114,7 @@ export default function MapComponent() {
         dataProjection: "EPSG:4326",
         featureProjection: "EPSG:3857",
       });
-      data.push({ id: feature.getId() as number, wkt: wktString });
+      data.push({ id: Number(id), wkt: wktString });
     }
     updatePolygon(data);
   });
