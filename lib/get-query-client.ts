@@ -4,6 +4,11 @@ import {
   QueryClient,
 } from "@tanstack/react-query";
 
+/**
+ * Create a QueryClient configured for the application's default query behavior.
+ *
+ * @returns A QueryClient with queries' staleTime set to 3600000 (1 hour) and a dehydration policy that includes queries when the default policy applies or the query's state is `"pending"`.
+ */
 function makeQueryClient() {
   return new QueryClient({
     defaultOptions: {
@@ -22,6 +27,15 @@ function makeQueryClient() {
 
 let browserQueryClient: QueryClient | undefined;
 
+/**
+ * Provide a QueryClient instance appropriate for the current runtime environment.
+ *
+ * On the server, this returns a new QueryClient for each call. In the browser,
+ * this returns a lazily-initialized singleton that is created once and reused
+ * for subsequent calls.
+ *
+ * @returns A configured QueryClient instance.
+ */
 export function getQueryClient() {
   if (isServer) {
     // Server: always make a new query client

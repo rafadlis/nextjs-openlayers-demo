@@ -52,6 +52,18 @@ import { deletePolygonById } from "../_server/delete-polygon";
 import { insertPolygon } from "../_server/insert-polygon";
 import { updatePolygonById } from "../_server/update-polygon";
 
+/**
+ * Render an interactive OpenLayers map with drawing, modifying, selecting, and ruler tools, and synchronize polygon data with the server.
+ *
+ * The component provides:
+ * - Persistent polygon CRUD via React Query (insert, update, delete) with WKT conversion and projection handling.
+ * - Mode switching (draw, select, modify, ruler) including keyboard shortcuts (d, s, m, r), snapping, and undo/abort controls.
+ * - Selection UI that shows selected polygon ID, geometry type, and area in square meters.
+ * - A separate local ruler layer for measuring (does not persist to the server).
+ * - Zoom controls, CRS badge, and a refresh action to re-fetch polygons from the server.
+ *
+ * @returns The rendered map component JSX.
+ */
 export default function MapComponent() {
   // MARK: ref
   const mapRef = useRef<HTMLDivElement | null>(null);
