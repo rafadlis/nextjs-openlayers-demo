@@ -375,8 +375,13 @@ export default function MapComponent() {
         return;
       }
       const areaInMeterSquare = getArea(dataGeometry);
+      const featureId = data.getId();
+      if (featureId === undefined) {
+        setShowedData(undefined);
+        return;
+      }
       setShowedData({
-        id: data.getId() as number,
+        id: Number(featureId),
         type: dataGeometry.getType(),
         areaInMeterSquare,
       });
@@ -412,6 +417,8 @@ export default function MapComponent() {
       modifyInteractionRef.current = null;
       selectInteractionRef.current = null;
       snapInteractionRef.current = null;
+      rulerDrawInteractionRef.current = null;
+      rulerSnapInteractionRef.current = null;
     };
   }, []);
 
@@ -588,8 +595,6 @@ export default function MapComponent() {
                 asChild
                 onClick={() => {
                   queryClient.invalidateQueries({ queryKey: ["polygons"] });
-
-                  refetchPolygons();
                 }}
                 variant="outline"
               >
