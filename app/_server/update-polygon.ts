@@ -22,7 +22,9 @@ export async function updatePolygonById(data: { id: number; wkt: string }[]) {
 
   const batchResponse = await db.batch([firstQuery, ...restQueries]);
 
-  return batchResponse.map((result) => ({
+  return batchResponse.map((result, index) => ({
+    id: data[index].id,
+    success: result.rowCount > 0,
     rowCount: result.rowCount,
   }));
 }
