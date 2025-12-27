@@ -48,8 +48,10 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { getPolygons } from "../_lib/get-polygons";
+import { deletePolygonById } from "../_server/delete-polygon";
 import { insertPolygon } from "../_server/insert-polygon";
 import { updatePolygonById } from "../_server/update-polygon";
+
 export default function MapComponent() {
   // MARK: ref
   const mapRef = useRef<HTMLDivElement | null>(null);
@@ -84,6 +86,18 @@ export default function MapComponent() {
     },
     onError: (error) => {
       console.error("Failed to update polygon:", error);
+    },
+  });
+  const { mutate: deletePolygon } = useMutation({
+    mutationFn: (id: number) => deletePolygonById(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["polygons"] });
+      // Clear selection and UI data on success
+      selectInteractionRef.current?.getFeatures().clear();
+      setShowedData(undefined);
+    },
+    onError: (error) => {
+      console.error("Failed to delete polygon:", error);
     },
   });
 
@@ -126,7 +140,44 @@ export default function MapComponent() {
     }
   });
 
-  // MARK: state
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is a complex function that needs to be refactored.
+  const handleDelete = useEffectEvent(() => {
+    const select = selectInteractionRef.current;
+    if (!select) {
+      return;
+    }
+
+    const selectedFeatures = select.getFeatures();
+
+    // Iterate backward so removing items doesn't mess up the loop
+    for (const feature of selectedFeatures.getArray().slice()) {
+      // CASE A: It is a Ruler (Local only)
+      if (rulerSourceRef.current?.hasFeature(feature)) {
+        rulerSourceRef.current.removeFeature(feature);
+        selectedFeatures.remove(feature); // Deselect
+      }
+
+      // CASE B: It is a Polygon (Database)
+      else if (vectorSourceRef.current?.hasFeature(feature)) {
+        const id = feature.getId();
+        if (id) {
+          // Trigger server delete
+          deletePolygon(Number(id));
+        } else {
+          // Fallback for unsaved features
+          vectorSourceRef.current.removeFeature(feature);
+          selectedFeatures.remove(feature);
+        }
+      }
+    }
+
+    // Hide the info card if nothing is selected anymore
+    if (selectedFeatures.getLength() === 0) {
+      setShowedData(undefined);
+    }
+  });
+
+  // MARK: utilty
   type EditorMode = "draw" | "select" | "modify" | "ruler";
   const [mode, setMode] = useState<EditorMode>("draw");
   const [showedData, setShowedData] = useState<
@@ -185,8 +236,17 @@ export default function MapComponent() {
       rulerSnap.setActive(isEditing);
     }
   });
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is a complex function that needs to be refactored.
   const onKeyDown = useEffectEvent((event: KeyboardEvent): void => {
     const key = event.key.toLowerCase();
+    if (key === "delete" || key === "backspace") {
+      // Prevent browser back navigation if focus is on body
+      if (document.activeElement === document.body) {
+        event.preventDefault();
+      }
+      handleDelete();
+      return;
+    }
     // Abort drawing on Escape/Esc
     if (key.startsWith("esc")) {
       try {
@@ -238,7 +298,7 @@ export default function MapComponent() {
     view.setZoom(currentZoom - 1);
   };
 
-  // MARK: - effect
+  // MARK: main
   useEffect(() => {
     if (!mapRef.current) {
       return;
@@ -295,12 +355,11 @@ export default function MapComponent() {
     map.addInteraction(modifyInteraction);
     map.addInteraction(drawInteraction);
     map.addInteraction(rulerDrawInteraction);
-    
+
     map.addInteraction(selectInteraction);
 
     map.addInteraction(rulerSnapInteraction);
     map.addInteraction(snapInteraction);
-
 
     selectInteraction.on("select", (evt): void => {
       if (!evt.selected.length) {
@@ -355,7 +414,7 @@ export default function MapComponent() {
     };
   }, []);
 
-  // MARK: effect
+  // MARK: new data
   useEffect(() => {
     const source = vectorSourceRef.current;
 
