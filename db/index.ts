@@ -1,6 +1,12 @@
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 
+/**
+ * Retrieve and sanitize the DATABASE_URL environment variable.
+ *
+ * @returns The DATABASE_URL string with surrounding single or double quotes removed.
+ * @throws Error if DATABASE_URL is not set or is empty.
+ */
 function getDatabaseUrl(): string {
   const url = process.env.DATABASE_URL?.trim();
   if (!url) {
@@ -15,6 +21,11 @@ function getDatabaseUrl(): string {
 // Lazy initialization to ensure env vars are loaded when actually used
 let _db: ReturnType<typeof drizzle<Record<string, never>>> | null = null;
 
+/**
+ * Lazily initializes the Drizzle database client backed by a Neon HTTP client and returns it for reuse.
+ *
+ * @returns The initialized Drizzle client instance
+ */
 function getDb() {
   if (!_db) {
     const sql = neon(getDatabaseUrl());
